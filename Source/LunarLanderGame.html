@@ -1,0 +1,1119 @@
+<html>
+<body>
+
+<div id="divUi">
+	<h3>Lunar Lander Game</h3>
+
+	<p>
+		Use the left and right arrow keys to rotate the lander,
+		and the up arrow to thrust.  The object is to gently lower the lander
+		right-side up onto a flat patch of ground without running out of fuel.
+	</p>
+
+	<div id="divDisplay"></div>
+</div>
+
+<script type="text/javascript">
+
+class Game
+{
+	run()
+	{
+		var universe = Universe.demo();
+		universe.initialize();
+	}
+}
+
+// Classes.
+
+class ActivityDefn
+{
+	constructor(name, perform)
+	{
+		this.name = name;
+		this._perform = perform;
+	}
+
+	static byName(name)
+	{
+		return ActivityDefn.Instances().byName(name);
+	}
+
+	static Instances()
+	{
+		if (ActivityDefn._instances == null)
+		{
+			ActivityDefn._instances = new ActivityDefn_Instances();
+		}
+		return ActivityDefn._instances;
+	}
+
+	perform(universe, world, place, entityActing)
+	{
+		this._perform(universe, world, place, entityActing);
+	}
+}
+
+class ActivityDefn_Instances
+{
+	constructor()
+	{
+		this.DoNothing = new ActivityDefn
+		(
+			"DoNothing",
+			(u, w, p, e) => {}
+		);
+
+		this.UserInputAccept = new ActivityDefn
+		(
+			"UserInputAccept",
+			(u, w, p, e) =>
+			{
+				var inputTracker = u.inputTracker;
+				var keysPressed = inputTracker.keysPressed;
+				keysPressed.forEach
+				(
+					key =>
+					{
+						if (key == "ArrowLeft")
+						{
+							var defn = e.defn();
+							e.disp.headingInTurnsAdd(defn.turnsPerTick);
+						}
+						else if (key == "ArrowRight")
+						{
+							e.disp.headingInTurnsAdd(defn.turnsPerTick);
+						}
+						else if (key == "ArrowUp")
+						{
+							var defn = e.defn();
+							var thrust = defn.accelerationPerTick;
+							e.disp.vel.add
+							(
+								e.disp.headingAsCoords().multiplyScalar(thrust)
+							).trimToMagnitudeMax
+							(
+								defn.speedMax
+							);
+						}
+					}
+				);
+			}
+		);
+
+		this._All =
+		[
+			this.DoNothing,
+			this.UserInputAccept
+		];
+
+		this._AllByName = new Map(this._All.map(x => [x.name, x]) );
+	}
+
+	byName(name)
+	{
+		return this._AllByName.get(name);
+	}
+}
+
+class Bounds
+{
+	constructor(center, size)
+	{
+		this.center = center;
+		this.size = size;
+
+		this._sizeHalf = this.size.clone().half();
+		this._min = Coords.zeroes();
+		this._max = Coords.zeroes();
+	}
+
+	static fromCenterAndSize(center, size)
+	{
+		return new Bounds(center, size);
+	}
+
+	containsPoint(pointToCheck)
+	{
+		return pointToCheck.isInRangeMinMax(this.min(), this.max() );
+	}
+
+	overlapWith(other)
+	{
+		var thisMin = this.min();
+		var thisMax = this.max();
+		var otherMin = other.min();
+		var otherMax = other.max();
+
+		var doOverlapInX =
+		(
+			(
+				thisMin.x >= otherMin.x
+				&& thisMin.x <= otherMax.x
+			)
+			||
+			(
+				thisMax.x >= otherMin.x
+				&& thisMax.x <= otherMax.x
+			)
+			||
+			(
+				otherMin.x >= thisMin.x
+				&& otherMin.x <= thisMax.x
+			)
+			||
+			(
+				otherMax.x >= thisMin.x
+				&& otherMax.x <= thisMax.x
+			)
+		);
+
+		var doOverlapInY =
+		(
+			(
+				thisMin.y >= otherMin.y
+				&& thisMin.y <= otherMax.y
+			)
+			||
+			(
+				thisMax.y >= otherMin.y
+				&& thisMax.y <= otherMax.y
+			)
+			||
+			(
+				otherMin.y >= thisMin.y
+				&& otherMin.y <= thisMax.y
+			)
+			||
+			(
+				otherMax.y >= thisMin.y
+				&& otherMax.y <= thisMax.y
+			)
+		);
+
+		var doOverlap = (doOverlapInX && doOverlapInY);
+
+		return doOverlap;
+	}
+
+	max()
+	{
+		return this._max.overwriteWith(this.center).add(this._sizeHalf);
+	}
+
+	min()
+	{
+		return this._min.overwriteWith(this.center).subtract(this._sizeHalf);
+	}
+}
+
+class Color
+{
+	constructor(name, systemColor)
+	{
+		this.name = name;
+		this.systemColor = systemColor;
+	}
+
+	static byName(name)
+	{
+		return Color.Instances().byName(name);
+	}
+
+	static Instances()
+	{
+		if (Color._instances == null)
+		{
+			Color._instances = new Color_Instances();
+		}
+		return Color._instances;
+	}
+}
+
+class Color_Instances
+{
+	constructor()
+	{
+		this.Black = new Color("Black", "Black");
+		this.Blue = new Color("Blue", "Blue");
+		this.Gray = new Color("Gray", "Gray");
+		this.Green = new Color("Green", "Green");
+		this.Red = new Color("Red", "Red");
+		this.White = new Color("White", "White");
+		this.Yellow = new Color("Yellow", "Yellow");
+
+		this._All =
+		[
+			this.Black,
+			this.Blue,
+			this.Gray,
+			this.Green,
+			this.Red,
+			this.White,
+			this.Yellow
+		];
+
+		this._AllByName = new Map(this._All.map(x => [x.name, x]) );
+	}
+
+	byName(name)
+	{
+		return this._AllByName.get(name);
+	}
+}
+
+class Coords
+{
+	constructor(x, y)
+	{
+		this.x = x;
+		this.y = y;
+	}
+
+	static fromHeadingInTurns(headingInTurns)
+	{
+		var headingInRadians = headingInTurns * Math.PI * 2;
+		var returnValue = new Coords
+		(
+			Math.cos(headingInRadians), Math.sin(headingInRadians)
+		);
+		return returnValue;
+	}
+
+	static ones()
+	{
+		return new Coords(1, 1);
+	}
+
+	static zeroes()
+	{
+		return new Coords(0, 0);
+	}
+
+	add(other)
+	{
+		this.x += other.x;
+		this.y += other.y;
+		return this;
+	}
+
+	addXY(x, y)
+	{
+		this.x += x;
+		this.y += y;
+		return this;
+	}
+
+	clone()
+	{
+		return new Coords(this.x, this.y);
+	}
+
+	divideScalar(scalar)
+	{
+		this.x /= scalar;
+		this.y /= scalar;
+		return this;
+	}
+
+	half()
+	{
+		return this.divideScalar(2);
+	}
+
+	invert()
+	{
+		return this.multiplyScalar(-1);
+	}
+
+	isInRangeMax(max)
+	{
+		return this.isInRangeMinMax(Coords.zeroes(), max);
+	}
+
+	isInRangeMinMax(min, max)
+	{
+		var isInRange =
+		(
+			this.x >= min.x
+			&& this.x <= max.x
+			&& this.y >= min.y
+			&& this.y <= max.y
+		);
+
+		return isInRange;
+	}
+
+	magnitude()
+	{
+		return Math.sqrt(this.x * this.x + this.y * this.y);
+	}
+
+	multiply(other)
+	{
+		this.x *= other.x;
+		this.y *= other.y;
+		return this;
+	}
+
+	multiplyScalar(scalar)
+	{
+		this.x *= scalar;
+		this.y *= scalar;
+		return this;
+	}
+
+	normalize()
+	{
+		return this.divideScalar(this.magnitude() );
+	}
+
+	overwriteWith(other)
+	{
+		this.x = other.x;
+		this.y = other.y;
+		return this;
+	}
+
+	subtract(other)
+	{
+		this.x -= other.x;
+		this.y -= other.y;
+		return this;
+	}
+
+	trimToMagnitudeMax(magnitudeMax)
+	{
+		var magnitude = this.magnitude();
+		if (magnitude > magnitudeMax)
+		{
+			this.divideScalar(magnitude);
+			this.multiplyScalar(magnitudeMax);
+		}
+		return this;
+	}
+
+	trimToRangeMax(max)
+	{
+		return this.trimToRangeMinMax(Coords.zeroes(), max);
+	}
+
+	trimToRangeMinMax(min, max)
+	{
+		if (this.x < min.x)
+		{
+			this.x = min.x;
+		}
+		else if (this.x > max.x)
+		{
+			this.x = max.x;
+		}
+
+		if (this.y < min.y)
+		{
+			this.y = min.y;
+		}
+		else if (this.y > max.y)
+		{
+			this.y = max.y;
+		}
+
+		return this;
+	}
+}
+
+class Display
+{
+	constructor(sizeInPixels)
+	{
+		this.sizeInPixels = sizeInPixels;
+
+		this._drawPos = Coords.zeroes();
+		this._zeroes = Coords.zeroes();
+	}
+
+	initialize()
+	{
+		var d = document;
+		var canvas = d.createElement("canvas");
+		canvas.width = this.sizeInPixels.x;
+		canvas.height = this.sizeInPixels.y;
+
+		this.graphics = canvas.getContext("2d");
+
+		var divDisplay = d.getElementById("divDisplay");
+		divDisplay.appendChild(canvas);
+	}
+
+	// Draw.
+
+	clear()
+	{
+		this.drawRectangleAtPosWithSizeAndColor
+		(
+			this._zeroes, this.sizeInPixels, Color.Instances().Black
+		);
+	}
+
+	drawLineFromPosToPosWithColor(posFrom, posTo, color)
+	{
+		this.graphics.strokeStyle = color.systemColor;
+		this.graphics.beginPath();
+		this.graphics.moveTo(posFrom.x, posFrom.y);
+		this.graphics.lineTo(posTo.x, posTo.y);
+		this.graphics.stroke();
+	}
+
+	drawPathWithColor(path, color)
+	{
+		var points = path.vertices;
+		var pointPrev = points[0];
+		for (var i = 1; i < points.length; i++)
+		{
+			var point = points[i];
+			this.drawLineFromPosToPosWithColor(pointPrev, point, color);
+			pointPrev = point;
+		}
+		this.drawLineFromPosToPosWithColor
+		(
+			pointPrev, points[0], color
+		);
+	}
+
+	drawRectangleAtPosWithSizeAndColor(pos, size, color)
+	{
+		this.graphics.fillStyle = color.systemColor;
+		this.graphics.fillRect
+		(
+			pos.x, pos.y, size.x, size.y
+		);
+	}
+
+	drawRectangleWithCenterSizeAndColor(center, size, color)
+	{
+		var drawPos =
+			this._drawPos.overwriteWith(size).half().invert().add(center);
+
+		this.drawRectangleAtPosWithSizeAndColor(drawPos, size, color);
+	}
+}
+
+class Disposition
+{
+	constructor(headingInTurns, pos)
+	{
+		this.headingInTurns = headingInTurns;
+		this.pos = pos;
+
+		this.vel = Coords.zeroes();
+	}
+
+	clone()
+	{
+		return new Disposition(this.headingInTurns, this.pos.clone() );
+	}
+
+	headingAdd(offsetInTurns)
+	{
+		this.headingInTurns += offsetInTurns;
+		while (this.headingInTurns < 0)
+		{
+			this.headingInTurns += 1;
+		}
+		while (this.headingInTurns >= 1)
+		{
+			this.headingInTurns -= 1;
+		}
+	}
+
+	headingAsCoords()
+	{
+		return Coords.fromHeadingInTurns(this.headingInTurns);
+	}
+}
+
+class InputTracker
+{
+	constructor()
+	{
+		this.keysPressed = [];
+	}
+
+	initialize()
+	{
+		var d = document;
+		d.onkeydown = this.handleEventKeyDown.bind(this);
+		d.onkeyup = this.handleEventKeyUp.bind(this);
+	}
+
+	keyRelease(key)
+	{
+		var keyIndex = this.keysPressed.indexOf(key);
+		if (keyIndex >= 0)
+		{
+			this.keysPressed.splice
+			(
+				keyIndex, 1	
+			);
+		}
+	}
+
+	// Events.
+
+	handleEventKeyDown(e)
+	{
+		var key = e.key;
+		if (this.keysPressed.indexOf(key) == -1)
+		{
+			this.keysPressed.push(key);
+		}
+	}
+
+	handleEventKeyUp(e)
+	{
+		this.keyRelease(e.key);
+	}
+}
+
+class Landscape
+{
+	constructor(color, path)
+	{
+		this.color = color;
+		this.path = path;
+	}
+
+	static randomFromColorAndSize(color, size)
+	{
+		var segmentCount = 8;
+
+		var points = [];
+
+		var altitudeBase = .7;
+		var altitudeOffsetMax = .2; 
+
+		for (var i = 0; i <= segmentCount; i++)
+		{
+			var altitudeOffset = Math.random() * altitudeOffsetMax;
+			var altitude = altitudeBase + altitudeOffset;
+			var point = new Coords(i / segmentCount, altitude);
+			point.multiply(size);
+			points.push(point);
+		}
+
+		var pointIndexToFlatten = 2 + Math.floor
+		(
+			Math.random() * (segmentCount - 2)
+		);
+
+		points[pointIndexToFlatten].y = points[pointIndexToFlatten - 1].y;
+
+		points.push(new Coords(1, 1).multiply(size) );
+		points.push(new Coords(0, 1).multiply(size) );
+
+		var path = new Path(points);
+
+		var landscape = new Landscape(color, path);
+
+		return landscape;
+	}
+
+	drawToDisplay(display)
+	{
+		display.drawPathWithColor(this.path, this.color);
+	}
+}
+
+class Mover
+{
+	constructor(id, defnName, disp)
+	{
+		this.id = id;
+		this.defnName = defnName;
+		this.disp = disp;
+	}
+
+	activityDefn()
+	{
+		var defn = this.defn();
+		var activityDefn = defn.activityDefn();
+		return activityDefn;
+	}
+
+	bounds()
+	{
+		if (this._bounds == null)
+		{
+			this._bounds = Bounds.fromCenterAndSize
+			(
+				this.disp.pos, this.defn().size
+			);
+		}
+
+		return this._bounds;
+	}
+
+	defn()
+	{
+		return MoverDefn.byName(this.defnName);
+	}
+
+	drawToDisplay(display)
+	{
+		var defn = this.defn();
+		var visual = defn.visual();
+		visual.drawToDisplayForEntity(display, this);
+	}
+
+	initialize()
+	{
+		// Do nothing.
+	}
+
+	updateForTimerTick(universe, world, place)
+	{
+		var disp = this.disp;
+
+		var gravity = place.gravityAccelerationPerTick;
+
+		disp.vel.add(gravity);
+		var defn = this.defn();
+		disp.vel.trimToMagnitudeMax(defn.speedMax);
+
+		var pos = disp.pos;
+		pos.add(disp.vel);
+
+		if (pos.isInRangeMax(place.size) == false)
+		{
+			place.moverRemove(this);
+		}
+		else
+		{
+			var activityDefn = this.activityDefn();
+			activityDefn.perform(universe, world, place, this);
+		}
+	}
+}
+
+class MoverDefn
+{
+	constructor
+	(
+		name,
+		integrityMax,
+		turnsPerTick,
+		accelerationPerTick,
+		speedMax,
+		size,
+		visualName,
+		activityDefnName
+	)
+	{
+		this.name = name;
+		this.integrityMax = integrityMax;
+		this.turnsPerTick = turnsPerTick;
+		this.accelerationPerTick = accelerationPerTick;
+		this.speedMax = speedMax;
+		this.size = size;
+		this.visualName = visualName;
+		this.activityDefnName = activityDefnName;
+	}
+
+	static byName(name)
+	{
+		return MoverDefn.Instances().byName(name);
+	}
+
+	static Instances()
+	{
+		if (MoverDefn._instances == null)
+		{
+			MoverDefn._instances = new MoverDefn_Instances();
+		}
+		return MoverDefn._instances;
+	}
+
+	activityDefn()
+	{
+		return ActivityDefn.byName(this.activityDefnName);
+	}
+
+	visual()
+	{
+		return Visual.byName(this.visualName);
+	}
+}
+
+class MoverDefn_Instances
+{
+	constructor()
+	{
+		var activityDefns = ActivityDefn.Instances();
+		var visuals = Visual.Instances();
+
+		var sizeShip = new Coords(16, 16);
+		var sizeProjectile = new Coords(2, 2);
+
+		this.Player = new MoverDefn
+		(
+			"Player",
+			1, // integrityMax
+			.01, // turnsPerTick
+			.2, // accelerationPerTick
+			4, // speedMax
+			sizeShip,
+			visuals.Player.name,
+			activityDefns.UserInputAccept.name
+		);
+
+		this._All =
+		[
+			this.Player
+		];
+
+		this._AllByName = new Map(this._All.map(x => [x.name, x]) );
+	}
+
+	byName(name)
+	{
+		return this._AllByName.get(name);
+	}
+}
+
+class Path
+{
+	constructor(vertices)
+	{
+		this.vertices = vertices;
+	}
+
+	static rectangleOfSize(size)
+	{
+		var vertices =
+		[
+			new Coords(0, 0),
+			new Coords(1, 0),
+			new Coords(1, 1),
+			new Coords(0, 1)
+		];
+
+		vertices.forEach(x => x.multiply(size) );
+
+		return new Path(vertices);
+	}
+
+	// Clonable.
+
+	clone()
+	{
+		return new Path(this.vertices.map(x => x.clone() ) );
+	}
+
+	overwriteWith(other)
+	{
+		this.vertices.forEach((x, i) => x.overwriteWith(other.vertices[i]) );
+	}
+}
+
+class PlaceLevel
+{
+	constructor
+	(
+		name,
+		size,
+		gravityAccelerationPerTick,
+		landscape
+	)
+	{
+		this.name = name;
+		this.size = size;
+		this.gravityAccelerationPerTick = gravityAccelerationPerTick;
+		this.landscape = landscape;
+
+		this.ticksSoFar = 0;
+
+		var moverForPlayer = new Mover
+		(
+			0, // id
+			"Player",
+			new Disposition
+			(
+				.75, // heading
+				new Coords(.5, .1).multiply(this.size)
+			)
+		);
+
+		this.movers = [ moverForPlayer ];
+	}
+
+	static demo()
+	{
+		var placeSize = new Coords(400, 300);
+
+		var landscapeColor = Color.Instances().Gray;
+		var landscape =
+			Landscape.randomFromColorAndSize(landscapeColor, placeSize);
+
+		var place = new PlaceLevel
+		(
+			"Place0",
+			placeSize,
+			new Coords(0, .1), // gravityAccelerationPerTick
+			landscape
+		);
+
+		return place;
+	}
+
+	drawToDisplay(display)
+	{
+		display.clear();
+		this.landscape.drawToDisplay(display);
+		this.movers.forEach(x => x.drawToDisplay(display) );
+	}
+
+	initialize(universe, world)
+	{
+		this.movers.forEach(x => x.initialize(universe, world, this) );
+	}
+
+	moverRemove(mover)
+	{
+		this.movers.splice(this.movers.indexOf(mover), 1);
+	}
+
+	secondsSoFar(universe)
+	{
+		return universe.timerHelper.secondsForTicks(this.ticksSoFar);
+	}
+
+	updateForTimerTick(universe, world)
+	{
+		this.movers.forEach
+		(
+			x => x.updateForTimerTick(universe, world, this, x)
+		);
+
+		var moverPlayer = this.movers[0];
+		if (moverPlayer != null)
+		{
+			// todo - Find collisions with landscape.
+		}
+
+		this.ticksSoFar++;
+
+		this.drawToDisplay(universe.display);
+	}
+}
+
+class TimerHelper
+{
+	constructor(ticksPerSecond)
+	{
+		this.ticksPerSecond = ticksPerSecond;
+
+		this.millisecondsPerTick = Math.round
+		(
+			1000 / this.ticksPerSecond
+		);
+	}
+
+	initialize(universe)
+	{
+		this.systemTimer = setInterval
+		(
+			() => universe.updateForTimerTick(),
+			this.millisecondsPerTick
+		);
+	}
+
+	secondsForTicks(ticks)
+	{
+		return ticks / this.ticksPerSecond;
+	}
+}
+
+class Universe
+{
+	constructor
+	(
+		display,
+		inputTracker,
+		timerHelper,
+		world
+	)
+	{
+		this.display = display;
+		this.inputTracker = inputTracker;
+		this.timerHelper = timerHelper;
+		this.world = world;
+	}
+
+	static demo()
+	{
+		var display = new Display(new Coords(400, 300) );
+		var inputTracker = new InputTracker();
+		var timerHelper = new TimerHelper(24);
+		var world = World.demo();
+
+		return new Universe
+		(
+			display,
+			inputTracker,
+			timerHelper,
+			world
+		);
+	}
+
+	initialize()
+	{
+		this.display.initialize();
+		this.inputTracker.initialize();
+		this.timerHelper.initialize(this);
+
+		this.world.initialize();
+	}
+
+	updateForTimerTick()
+	{
+		this.world.updateForTimerTick(this);
+	}
+}
+
+class Visual
+{
+	constructor(name, colorName, path)
+	{
+		this.name = name;
+		this.colorName = colorName;
+		this.path = path;
+
+		this._pathTransformed = this.path.clone();
+	}
+
+	static byName(name)
+	{
+		return Visual.Instances().byName(name);
+	}
+
+	static Instances()
+	{
+		if (Visual._instances == null)
+		{
+			Visual._instances = new Visual_Instances();
+		}
+		return Visual._instances;
+	}
+
+	color()
+	{
+		return Color.byName(this.colorName);
+	}
+
+	drawToDisplayForEntity(display, entity)
+	{
+		var entityPos = entity.disp.pos;
+
+		this._pathTransformed.overwriteWith(this.path);
+		this._pathTransformed.vertices.forEach
+		(
+			x => x.add(entityPos)
+		);
+
+		display.drawPathWithColor
+		(
+			this._pathTransformed, this.color()
+		);
+	}
+}
+
+class Visual_Instances
+{
+	constructor()
+	{
+		var playerPath = new Path
+		([
+			new Coords(.2, 0),
+			new Coords(.8, 0),
+			new Coords(1, 1),
+			new Coords(0, 1)
+		]);
+
+		var playerSize = new Coords(16, 16);
+
+		playerPath.vertices.forEach(x => x.multiply(playerSize) );
+
+		this.Player = new Visual
+		(
+			"Player",
+			"Gray",
+			playerPath
+		);
+
+		this._All =
+		[
+			this.Player
+		];
+
+		this._AllByName = new Map(this._All.map(x => [x.name, x]) );
+	}
+
+	byName(name)
+	{
+		return this._AllByName.get(name);
+	}
+}
+
+class World
+{
+	constructor(name, places)
+	{
+		this.name = name;
+		this.places = places;
+
+		this.placeCurrentIndex = 0;
+	}
+
+	static demo()
+	{
+		var ms =
+			(second, moverDefnName, disp) =>
+				new MoverSpawning(second, moverDefnName, disp);
+
+		var place = PlaceLevel.demo();
+
+		var world = new World
+		(
+			"World0",
+			[
+				place
+			]
+		);
+
+		return world;
+	}
+
+	initialize(universe)
+	{
+		this.places.forEach(x => x.initialize(universe, this) );
+	}
+
+	placeCurrent()
+	{
+		return this.places[this.placeCurrentIndex];
+	}
+
+	updateForTimerTick(universe)
+	{
+		var place = this.placeCurrent();
+		place.updateForTimerTick(universe, this);
+	}
+}
+
+// Run.
+
+new Game().run();
+
+</script>
+</body>
+</html>
